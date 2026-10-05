@@ -2210,6 +2210,132 @@ final class SnippetBasedReferenceTests: XCTestCase {
             """
         )
     }
+    func testAttachedMacrosSchemas() throws {
+        try assertSchemasTranslation(
+            attachedMacros: .init(
+                components: .init(schemas: [
+                    .init(match: ".*", macros: [.init(name: "AllSchemas")]),
+                    .init(
+                        match: "^Pet$",
+                        macros: [
+                            .init(name: "AllSchemas"),
+                            .init(name: "PetMacro", arguments: [.init(label: "name", value: .literal(.string("Pet")))]),
+                        ]
+                    ),
+                ])
+            ),
+            """
+            schemas:
+              Pet:
+                type: object
+                properties:
+                  name:
+                    type: string
+              PetKind:
+                type: string
+                enum:
+                  - cat
+                  - dog
+            """,
+            """
+            public enum Schemas {
+                @AllSchemas
+                @PetMacro(name: "Pet")
+                public struct Pet: Codable, Hashable, Sendable {
+                    public var name: Swift.String?
+                    public init(name: Swift.String? = nil) {
+                        self.name = name
+                    }
+                    public enum CodingKeys: String, CodingKey {
+                        case name
+                    }
+                }
+                @AllSchemas
+                @frozen public enum PetKind: String, Codable, Hashable, Sendable, CaseIterable {
+                    case cat = "cat"
+                    case dog = "dog"
+                }
+            }
+            """
+        )
+    }
+    func testAttachedMacrosOperations() throws {
+        let (types, client, server) = try makeTranslators(
+            attachedMacros: .init(
+                operations: [
+                    .init(
+                        match: "^createPet$",
+                        namespace: [.init(name: "Namespace")],
+                        input: [.init(name: "Input")],
+                        output: [.init(name: "Output")],
+                        protocolMethod: [.init(name: "ProtocolMethod")],
+                        clientMethod: [.init(name: "ClientMethod")]
+                    )
+                ],
+                apiProtocol: [.init(name: "Mockable")],
+                client: [.init(name: "ClientMacro")],
+                server: [.init(name: "ServerMacro")]
+            )
+        )
+        let paths = try YAMLDecoder()
+            .decode(
+                OpenAPI.PathItem.Map.self,
+                from: """
+                    /pets:
+                      get:
+                        operationId: listPets
+                        responses:
+                          '204':
+                            description: No content
+                      post:
+                        operationId: createPet
+                        responses:
+                          '204':
+                            description: No content
+                    """
+            )
+        let document = OpenAPI.Document(
+            openAPIVersion: .v3_1_0,
+            info: .init(title: "Test", version: "1.0.0"),
+            servers: [],
+            paths: paths,
+            components: .noComponents
+        )
+        try XCTAssertSwiftEquivalent(
+            types.translateAPIProtocol(paths),
+            """
+            @Mockable
+            public protocol APIProtocol: Sendable {
+                func listPets(_ input: Operations.listPets.Input) async throws -> Operations.listPets.Output
+                @ProtocolMethod
+                func createPet(_ input: Operations.createPet.Input) async throws -> Operations.createPet.Output
+            }
+            """
+        )
+        let operations = try OperationDescription.all(from: paths, in: .noComponents, context: types.context)
+        let createPet = try XCTUnwrap(operations.first { $0.operationID == "createPet" })
+        let listPets = try XCTUnwrap(operations.first { $0.operationID == "listPets" })
+
+        let renderedCreatePet = try renderedSwift(types.translateOperation(createPet))
+        XCTAssertTrue(renderedCreatePet.hasPrefix("@Namespace\npublic enum createPet {"))
+        XCTAssertTrue(renderedCreatePet.contains("    @Input\n    public struct Input: Sendable, Hashable {"))
+        XCTAssertTrue(renderedCreatePet.contains("    @Output\n    @frozen public enum Output: Sendable, Hashable {"))
+        let renderedListPets = try renderedSwift(types.translateOperation(listPets))
+        for name in ["@Namespace", "@Input", "@Output"] { XCTAssertFalse(renderedListPets.contains(name)) }
+
+        XCTAssertTrue(
+            try renderedSwift(client.translateClientMethod(createPet))
+                .hasPrefix("@ClientMethod\npublic func createPet(")
+        )
+        XCTAssertFalse(try renderedSwift(client.translateClientMethod(listPets)).hasPrefix("@"))
+        let clientFile = try XCTUnwrap(client.translateFile(parsedOpenAPI: document).files.first)
+        let renderer = TextBasedRenderer.default
+        renderer.renderFile(clientFile.contents)
+        XCTAssertTrue(renderer.renderedContents().contains("@ClientMacro\npublic struct Client: APIProtocol {"))
+
+        let (registerHandlers, _) = try server.translateRegisterHandlers(operations)
+        XCTAssertTrue(try renderedSwift(registerHandlers).hasPrefix("@ServerMacro\npublic func registerHandlers("))
+    }
 
     func testComponentsResponsesResponseNoBody() throws {
         try self.assertResponsesTranslation(
@@ -6600,6 +6726,7 @@ extension SnippetBasedReferenceTests {
         nameOverrides: [String: String] = [:],
         typeOverrides: TypeOverrides = .init(),
         featureFlags: FeatureFlags = [],
+        attachedMacros: AttachedMacros = .init(),
         ignoredDiagnosticMessages: Set<String> = [],
         componentsYAML: String
     ) throws -> TypesFileTranslator {
@@ -6611,7 +6738,8 @@ extension SnippetBasedReferenceTests {
                 namingStrategy: namingStrategy,
                 nameOverrides: nameOverrides,
                 typeOverrides: typeOverrides,
-                featureFlags: featureFlags
+                featureFlags: featureFlags,
+                attachedMacros: attachedMacros
             ),
             diagnostics: XCTestDiagnosticCollector(test: self, ignoredDiagnosticMessages: ignoredDiagnosticMessages),
             components: components
@@ -6639,25 +6767,23 @@ extension SnippetBasedReferenceTests {
     func makeTranslators(
         components: OpenAPI.Components = .noComponents,
         featureFlags: FeatureFlags = [],
+        attachedMacros: AttachedMacros = .init(),
         ignoredDiagnosticMessages: Set<String> = []
     ) throws -> (TypesFileTranslator, ClientFileTranslator, ServerFileTranslator) {
         let collector = XCTestDiagnosticCollector(test: self, ignoredDiagnosticMessages: ignoredDiagnosticMessages)
-        return (
-            TypesFileTranslator(
-                config: Config(mode: .types, access: .public, namingStrategy: .defensive, featureFlags: featureFlags),
-                diagnostics: collector,
-                components: components
-            ),
-            ClientFileTranslator(
-                config: Config(mode: .client, access: .public, namingStrategy: .defensive, featureFlags: featureFlags),
-                diagnostics: collector,
-                components: components
-            ),
-            ServerFileTranslator(
-                config: Config(mode: .server, access: .public, namingStrategy: .defensive, featureFlags: featureFlags),
-                diagnostics: collector,
-                components: components
+        func config(_ mode: GeneratorMode) -> Config {
+            Config(
+                mode: mode,
+                access: .public,
+                namingStrategy: .defensive,
+                featureFlags: featureFlags,
+                attachedMacros: attachedMacros
             )
+        }
+        return (
+            TypesFileTranslator(config: config(.types), diagnostics: collector, components: components),
+            ClientFileTranslator(config: config(.client), diagnostics: collector, components: components),
+            ServerFileTranslator(config: config(.server), diagnostics: collector, components: components)
         )
     }
 
@@ -6811,6 +6937,7 @@ extension SnippetBasedReferenceTests {
         featureFlags: FeatureFlags = [],
         nameOverrides: [String: String] = [:],
         typeOverrides: TypeOverrides = .init(),
+        attachedMacros: AttachedMacros = .init(),
         ignoredDiagnosticMessages: Set<String> = [],
         _ componentsYAML: String,
         _ expectedSwift: String,
@@ -6823,6 +6950,7 @@ extension SnippetBasedReferenceTests {
             nameOverrides: nameOverrides,
             typeOverrides: typeOverrides,
             featureFlags: featureFlags,
+            attachedMacros: attachedMacros,
             ignoredDiagnosticMessages: ignoredDiagnosticMessages,
             componentsYAML: componentsYAML
         )
@@ -6946,6 +7074,12 @@ private func XCTAssertEqualWithDiff(
     )
 }
 
+private func renderedSwift(_ declaration: Declaration) -> String {
+    let renderer = TextBasedRenderer.default
+    renderer.renderDeclaration(declaration.strippingComments)
+    return renderer.renderedContents()
+}
+
 private func XCTAssertSwiftEquivalent(
     _ declaration: Declaration,
     _ expectedSwift: String,
@@ -7019,6 +7153,7 @@ fileprivate extension Declaration {
         switch decl {
         case let .commentable(_, d): return stripComments(d)
         case let .deprecated(a, b): return .deprecated(a, stripComments(b))
+        case let .attributed(a, b): return .attributed(a, stripComments(b))
         case var .protocol(p):
             p.members = p.members.map(stripComments(_:))
             return .protocol(p)

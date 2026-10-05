@@ -669,6 +669,9 @@ indirect enum Declaration: Equatable, Codable {
     /// A declaration that adds a comment on top of the provided declaration.
     case deprecated(DeprecationDescription, Declaration)
 
+    /// A declaration that adds attributes on top of the provided declaration.
+    case attributed([AttributeDescription], Declaration)
+
     /// A variable declaration.
     case variable(VariableDescription)
 
@@ -704,6 +707,20 @@ struct DeprecationDescription: Equatable, Codable {
 
     /// A new name of the symbol, allowing the user to get a fix-it.
     var renamed: String?
+}
+
+/// A description of an attribute.
+///
+/// For example: `@MyMacro(name: "Foo", .live)`.
+struct AttributeDescription: Equatable, Codable {
+
+    /// The name of the attribute, without the leading `@`.
+    var name: String
+
+    /// The arguments of the attribute, already rendered as Swift source.
+    ///
+    /// The parentheses are omitted when empty.
+    var arguments: [String] = []
 }
 
 /// A description of an assignment expression.
@@ -1704,6 +1721,7 @@ extension Declaration {
             switch self {
             case .commentable(_, let declaration): return declaration.accessModifier
             case .deprecated(_, let declaration): return declaration.accessModifier
+            case .attributed(_, let declaration): return declaration.accessModifier
             case .variable(let variableDescription): return variableDescription.accessModifier
             case .extension(let extensionDescription): return extensionDescription.accessModifier
             case .struct(let structDescription): return structDescription.accessModifier
@@ -1722,6 +1740,9 @@ extension Declaration {
             case .deprecated(let deprecationDescription, var declaration):
                 declaration.accessModifier = newValue
                 self = .deprecated(deprecationDescription, declaration)
+            case .attributed(let attributes, var declaration):
+                declaration.accessModifier = newValue
+                self = .attributed(attributes, declaration)
             case .variable(var variableDescription):
                 variableDescription.accessModifier = newValue
                 self = .variable(variableDescription)

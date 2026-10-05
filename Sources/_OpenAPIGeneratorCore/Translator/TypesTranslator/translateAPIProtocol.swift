@@ -34,6 +34,7 @@ extension TypesFileTranslator {
         let protocolComment: Comment = .doc("A type that performs HTTP operations defined by the OpenAPI document.")
 
         return .commentable(protocolComment, .protocol(protocolDescription))
+            .attaching(config.attachedMacros.apiProtocol)
     }
 
     /// Returns an extension to the `APIProtocol` protocol, with some syntactic sugar APIs.
@@ -103,5 +104,6 @@ extension TypesFileTranslator {
         let signature = description.protocolSignatureDescription
         let function = FunctionDescription(signature: signature)
         return .commentable(operationComment, .function(function).deprecate(if: description.operation.deprecated))
+            .attaching(config.attachedMacros.macros(for: \.protocolMethod, operationID: description.operationID))
     }
 }

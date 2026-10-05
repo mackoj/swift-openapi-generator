@@ -51,6 +51,8 @@ struct TypesFileTranslator: FileTranslator {
         let operationDescriptions = try OperationDescription.all(from: doc.paths, in: doc.components, context: context)
         let operations = try translateOperations(operationDescriptions)
 
+        try emitUnmatchedAttachedMacroRuleDiagnostics(components: doc.components, operations: operationDescriptions)
+
         let rootCodeBlocks: [CodeBlock] = [
             .declaration(apiProtocol), .declaration(apiProtocolExtension), .declaration(serversDecl),
         ]

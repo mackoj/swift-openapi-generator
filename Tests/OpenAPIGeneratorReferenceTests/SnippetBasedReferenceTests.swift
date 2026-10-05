@@ -2259,82 +2259,373 @@ final class SnippetBasedReferenceTests: XCTestCase {
             """
         )
     }
-    func testAttachedMacrosOperations() throws {
-        let (types, client, server) = try makeTranslators(
+    func testAttachedMacrosSchemasMatchOpenAPIName() throws {
+        try assertSchemasTranslation(
             attachedMacros: .init(
-                operations: [
-                    .init(
-                        match: "^createPet$",
-                        namespace: [.init(name: "Namespace")],
-                        input: [.init(name: "Input")],
-                        output: [.init(name: "Output")],
-                        protocolMethod: [.init(name: "ProtocolMethod")],
-                        clientMethod: [.init(name: "ClientMethod")]
-                    )
-                ],
-                apiProtocol: [.init(name: "Mockable")],
-                client: [.init(name: "ClientMacro")],
-                server: [.init(name: "ServerMacro")]
-            )
+                components: .init(schemas: [
+                    .init(match: "^pet-store$", macros: [.init(name: "OpenAPIName")]),
+                    .init(match: "^pet_hyphen_store$", macros: [.init(name: "SwiftName")]),
+                    .init(match: "^PET", macros: [.init(name: "CaseSensitive")]),
+                ])
+            ),
+            """
+            schemas:
+              pet-store:
+                type: string
+            """,
+            """
+            public enum Schemas {
+                @OpenAPIName
+                public typealias pet_hyphen_store = Swift.String
+            }
+            """
         )
-        let paths = try YAMLDecoder()
-            .decode(
-                OpenAPI.PathItem.Map.self,
-                from: """
-                    /pets:
-                      get:
-                        operationId: listPets
-                        responses:
-                          '204':
-                            description: No content
-                      post:
-                        operationId: createPet
-                        responses:
-                          '204':
-                            description: No content
-                    """
-            )
-        let document = OpenAPI.Document(
-            openAPIVersion: .v3_1_0,
-            info: .init(title: "Test", version: "1.0.0"),
-            servers: [],
-            paths: paths,
-            components: .noComponents
+    }
+    func testAttachedMacrosSchemasInlineTypes() throws {
+        try assertSchemasTranslation(
+            attachedMacros: .init(components: .init(schemas: [.init(match: ".*", macros: [.init(name: "Macro")])])),
+            """
+            schemas:
+              Pet:
+                type: object
+                properties:
+                  kind:
+                    type: string
+                    enum:
+                      - cat
+            """,
+            """
+            public enum Schemas {
+                @Macro
+                public struct Pet: Codable, Hashable, Sendable {
+                    @frozen public enum kindPayload: String, Codable, Hashable, Sendable, CaseIterable {
+                        case cat = "cat"
+                    }
+                    public var kind: Components.Schemas.Pet.kindPayload?
+                    public init(kind: Components.Schemas.Pet.kindPayload? = nil) {
+                        self.kind = kind
+                    }
+                    public enum CodingKeys: String, CodingKey {
+                        case kind
+                    }
+                }
+            }
+            """
         )
+    }
+    func testAttachedMacrosSchemasRecursive() throws {
+        try assertSchemasTranslation(
+            attachedMacros: .init(components: .init(schemas: [.init(match: "^Node$", macros: [.init(name: "Macro")])])),
+            """
+            schemas:
+              Node:
+                type: object
+                properties:
+                  parent:
+                    $ref: '#/components/schemas/Node'
+            """,
+            """
+            public enum Schemas {
+                @Macro
+                public struct Node: Codable, Hashable, Sendable {
+                    public var parent: Components.Schemas.Node? {
+                        get  {
+                            self.storage.value.parent
+                        }
+                        _modify {
+                            yield &self.storage.value.parent
+                        }
+                    }
+                    public init(parent: Components.Schemas.Node? = nil) {
+                        self.storage = .init(value: .init(parent: parent))
+                    }
+                    public enum CodingKeys: String, CodingKey {
+                        case parent
+                    }
+                    public init(from decoder: any Swift.Decoder) throws {
+                        self.storage = try .init(from: decoder)
+                    }
+                    public func encode(to encoder: any Swift.Encoder) throws {
+                        try self.storage.encode(to: encoder)
+                    }
+                    private var storage: OpenAPIRuntime.CopyOnWriteBox<Storage>
+                    private struct Storage: Codable, Hashable, Sendable {
+                        var parent: Components.Schemas.Node?
+                        init(parent: Components.Schemas.Node? = nil) {
+                            self.parent = parent
+                        }
+                        typealias CodingKeys = Components.Schemas.Node.CodingKeys
+                    }
+                }
+            }
+            """
+        )
+    }
+    func testAttachedMacrosSchemasTypeOverride() throws {
+        try assertSchemasTranslation(
+            typeOverrides: TypeOverrides(schemas: ["UUID": "Foundation.UUID"]),
+            attachedMacros: .init(components: .init(schemas: [.init(match: "^UUID$", macros: [.init(name: "Macro")])])),
+            """
+            schemas:
+              UUID:
+                type: string
+                format: uuid
+            """,
+            """
+            public enum Schemas {
+                @Macro
+                public typealias UUID = Foundation.UUID
+            }
+            """
+        )
+    }
+    func testAttachedMacrosParameters() throws {
+        try assertParametersTranslation(
+            attachedMacros: .init(
+                components: .init(parameters: [.init(match: "^kind$", macros: [.init(name: "Macro")])])
+            ),
+            """
+            parameters:
+              limit:
+                name: limit
+                in: query
+                schema:
+                  type: integer
+              kind:
+                name: kind
+                in: query
+                schema:
+                  type: string
+                  enum:
+                    - cat
+            """,
+            """
+            public enum Parameters {
+                public typealias limit = Swift.Int
+                @Macro
+                @frozen public enum kind: String, Codable, Hashable, Sendable, CaseIterable {
+                    case cat = "cat"
+                }
+            }
+            """
+        )
+    }
+    func testAttachedMacrosRequestBodies() throws {
+        try assertRequestBodiesTranslation(
+            attachedMacros: .init(
+                components: .init(requestBodies: [.init(match: "^MyBody$", macros: [.init(name: "Macro")])])
+            ),
+            """
+            requestBodies:
+              MyBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      type: string
+            """,
+            """
+            public enum RequestBodies {
+                @Macro
+                @frozen public enum MyBody: Sendable, Hashable {
+                    case json(Swift.String)
+                }
+            }
+            """
+        )
+    }
+    func testAttachedMacrosResponses() throws {
+        try assertResponsesTranslation(
+            attachedMacros: .init(
+                components: .init(responses: [.init(match: "^BadRequest$", macros: [.init(name: "Macro")])])
+            ),
+            """
+            responses:
+              BadRequest:
+                description: Bad request
+            """,
+            """
+            public enum Responses {
+                @Macro
+                public struct BadRequest: Sendable, Hashable {
+                    public init() {}
+                }
+            }
+            """
+        )
+    }
+    func testAttachedMacrosHeaders() throws {
+        try assertHeadersTranslation(
+            attachedMacros: .init(components: .init(headers: [.init(match: "^Trace", macros: [.init(name: "Macro")])])),
+            """
+            headers:
+              TraceID:
+                schema:
+                  type: string
+            """,
+            """
+            public enum Headers {
+                @Macro
+                public typealias TraceID = Swift.String
+            }
+            """
+        )
+    }
+    func testAttachedMacrosOperation() throws {
+        let (types, _, _) = try makeTranslators(attachedMacros: Self.operationAttachedMacros)
+        let operations = try makeOperationDescriptions(types)
         try XCTAssertSwiftEquivalent(
-            types.translateAPIProtocol(paths),
+            types.translateOperation(XCTUnwrap(operations.first { $0.operationID == "createPet" })),
+            """
+            @Namespace
+            public enum createPet {
+                public static let id: Swift.String = "createPet"
+                @Input
+                public struct Input: Sendable, Hashable {
+                    public init() {}
+                }
+                @Output
+                @frozen public enum Output: Sendable, Hashable {
+                    public struct NoContent: Sendable, Hashable {
+                        public init() {}
+                    }
+                    case noContent(Operations.createPet.Output.NoContent)
+                    public static var noContent: Self {
+                        .noContent(.init())
+                    }
+                    public var noContent: Operations.createPet.Output.NoContent {
+                        get throws {
+                            switch self {
+                            case let .noContent(response):
+                                return response
+                            default:
+                                try throwUnexpectedResponseStatus(
+                                    expectedStatus: "noContent",
+                                    response: self
+                                )
+                            }
+                        }
+                    }
+                    case undocumented(statusCode: Swift.Int, OpenAPIRuntime.UndocumentedPayload)
+                }
+            }
+            """
+        )
+    }
+    func testAttachedMacrosAPIProtocol() throws {
+        let (types, _, _) = try makeTranslators(attachedMacros: Self.operationAttachedMacros)
+        try XCTAssertSwiftEquivalent(
+            types.translateAPIProtocol(Self.operationPaths),
             """
             @Mockable
             public protocol APIProtocol: Sendable {
                 func listPets(_ input: Operations.listPets.Input) async throws -> Operations.listPets.Output
                 @ProtocolMethod
                 func createPet(_ input: Operations.createPet.Input) async throws -> Operations.createPet.Output
+                @Deprecated
+                @available(*, deprecated)
+                func get_sol_pets_sol__lcub_petId_rcub_(_ input: Operations.get_sol_pets_sol__lcub_petId_rcub_.Input) async throws -> Operations.get_sol_pets_sol__lcub_petId_rcub_.Output
             }
             """
         )
-        let operations = try OperationDescription.all(from: paths, in: .noComponents, context: types.context)
-        let createPet = try XCTUnwrap(operations.first { $0.operationID == "createPet" })
-        let listPets = try XCTUnwrap(operations.first { $0.operationID == "listPets" })
-
-        let renderedCreatePet = try renderedSwift(types.translateOperation(createPet))
-        XCTAssertTrue(renderedCreatePet.hasPrefix("@Namespace\npublic enum createPet {"))
-        XCTAssertTrue(renderedCreatePet.contains("    @Input\n    public struct Input: Sendable, Hashable {"))
-        XCTAssertTrue(renderedCreatePet.contains("    @Output\n    @frozen public enum Output: Sendable, Hashable {"))
-        let renderedListPets = try renderedSwift(types.translateOperation(listPets))
-        for name in ["@Namespace", "@Input", "@Output"] { XCTAssertFalse(renderedListPets.contains(name)) }
-
-        XCTAssertTrue(
-            try renderedSwift(client.translateClientMethod(createPet))
-                .hasPrefix("@ClientMethod\npublic func createPet(")
+    }
+    func testAttachedMacrosClient() throws {
+        let (types, client, _) = try makeTranslators(attachedMacros: Self.operationAttachedMacros)
+        let operations = try makeOperationDescriptions(types)
+        try XCTAssertSwiftEquivalent(
+            client.translateClientMethod(XCTUnwrap(operations.first { $0.operationID == "createPet" })),
+            """
+            @ClientMethod
+            public func createPet(_ input: Operations.createPet.Input) async throws -> Operations.createPet.Output {
+                try await client.send(
+                    input: input,
+                    forOperation: Operations.createPet.id,
+                    serializer: { input in
+                        let path = try converter.renderedPath(
+                            template: "/pets",
+                            parameters: []
+                        )
+                        var request: HTTPTypes.HTTPRequest = .init(
+                            soar_path: path,
+                            method: .post
+                        )
+                        suppressMutabilityWarning(&request)
+                        return (request, nil)
+                    },
+                    deserializer: { response, responseBody in
+                        switch response.status.code {
+                        case 204:
+                            return .noContent(.init())
+                        default:
+                            return .undocumented(
+                                statusCode: response.status.code,
+                                .init(
+                                    headerFields: response.headerFields,
+                                    body: responseBody
+                                )
+                            )
+                        }
+                    }
+                )
+            }
+            """
         )
-        XCTAssertFalse(try renderedSwift(client.translateClientMethod(listPets)).hasPrefix("@"))
-        let clientFile = try XCTUnwrap(client.translateFile(parsedOpenAPI: document).files.first)
-        let renderer = TextBasedRenderer.default
-        renderer.renderFile(clientFile.contents)
-        XCTAssertTrue(renderer.renderedContents().contains("@ClientMacro\npublic struct Client: APIProtocol {"))
-
-        let (registerHandlers, _) = try server.translateRegisterHandlers(operations)
-        XCTAssertTrue(try renderedSwift(registerHandlers).hasPrefix("@ServerMacro\npublic func registerHandlers("))
+        let clientFile = try XCTUnwrap(
+            client.translateFile(
+                parsedOpenAPI: .init(
+                    openAPIVersion: .v3_1_0,
+                    info: .init(title: "Test", version: "1.0.0"),
+                    servers: [],
+                    paths: [:],
+                    components: .noComponents
+                )
+            )
+            .files.first
+        )
+        guard case .declaration(let clientStruct) = try XCTUnwrap(clientFile.contents.codeBlocks.first).item else {
+            return XCTFail("Expected a declaration.")
+        }
+        try XCTAssertSwiftEquivalent(
+            clientStruct,
+            """
+            @ClientMacro
+            public struct Client: APIProtocol {
+                private let client: UniversalClient
+                public init(
+                    serverURL: Foundation.URL,
+                    configuration: Configuration = .init(),
+                    transport: any ClientTransport,
+                    middlewares: [any ClientMiddleware] = []
+                ) {
+                    self.client = .init(
+                        serverURL: serverURL,
+                        configuration: configuration,
+                        transport: transport,
+                        middlewares: middlewares
+                    )
+                }
+                private var converter: Converter {
+                    client.converter
+                }
+            }
+            """
+        )
+    }
+    func testAttachedMacrosServer() throws {
+        let (_, _, server) = try makeTranslators(attachedMacros: Self.operationAttachedMacros)
+        let (registerHandlers, _) = try server.translateRegisterHandlers([])
+        try XCTAssertSwiftEquivalent(
+            registerHandlers,
+            """
+            @ServerMacro
+            public func registerHandlers(
+                on transport: any ServerTransport,
+                serverURL: Foundation.URL = .defaultOpenAPIServerURL,
+                configuration: Configuration = .init(),
+                middlewares: [any ServerMiddleware] = []
+            ) throws {}
+            """
+        )
     }
 
     func testComponentsResponsesResponseNoBody() throws {
@@ -6711,6 +7002,57 @@ final class SnippetBasedReferenceTests: XCTestCase {
     }
 }
 extension SnippetBasedReferenceTests {
+    static let operationAttachedMacros = AttachedMacros(
+        operations: [
+            .init(
+                match: "^createPet$",
+                namespace: [.init(name: "Namespace")],
+                input: [.init(name: "Input")],
+                output: [.init(name: "Output")],
+                protocolMethod: [.init(name: "ProtocolMethod")],
+                clientMethod: [.init(name: "ClientMethod")]
+            ),
+            .init(match: #"^get/pets/\{petId\}$"#, protocolMethod: [.init(name: "Deprecated")]),
+        ],
+        apiProtocol: [.init(name: "Mockable")],
+        client: [.init(name: "ClientMacro")],
+        server: [.init(name: "ServerMacro")]
+    )
+
+    static let operationPaths: OpenAPI.PathItem.Map = try! YAMLDecoder()
+        .decode(
+            OpenAPI.PathItem.Map.self,
+            from: """
+                /pets:
+                  get:
+                    operationId: listPets
+                    responses:
+                      '204':
+                        description: No content
+                  post:
+                    operationId: createPet
+                    responses:
+                      '204':
+                        description: No content
+                /pets/{petId}:
+                  get:
+                    deprecated: true
+                    parameters:
+                      - name: petId
+                        in: path
+                        required: true
+                        schema:
+                          type: string
+                    responses:
+                      '204':
+                        description: No content
+                """
+        )
+
+    func makeOperationDescriptions(_ types: TypesFileTranslator) throws -> [OperationDescription] {
+        try OperationDescription.all(from: Self.operationPaths, in: .noComponents, context: types.context)
+    }
+
     func makeTypesTranslator(openAPIDocumentYAML: String) throws -> TypesFileTranslator {
         let document = try YAMLDecoder().decode(OpenAPI.Document.self, from: openAPIDocumentYAML)
         return TypesFileTranslator(
@@ -6788,12 +7130,13 @@ extension SnippetBasedReferenceTests {
     }
 
     func assertHeadersTranslation(
+        attachedMacros: AttachedMacros = .init(),
         _ componentsYAML: String,
         _ expectedSwift: String,
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        let translator = try makeTypesTranslator(componentsYAML: componentsYAML)
+        let translator = try makeTypesTranslator(attachedMacros: attachedMacros, componentsYAML: componentsYAML)
         let components = translator.components
         let componentHeaders = try components.headers.mapValues { try components.assumeLookupOnce($0) }
         let translation = try translator.translateComponentHeaders(componentHeaders)
@@ -6801,13 +7144,18 @@ extension SnippetBasedReferenceTests {
     }
 
     func assertParametersTranslation(
+        attachedMacros: AttachedMacros = .init(),
         _ componentsYAML: String,
         _ expectedSwift: String,
         accessModifier: AccessModifier = .public,
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        let translator = try makeTypesTranslator(accessModifier: accessModifier, componentsYAML: componentsYAML)
+        let translator = try makeTypesTranslator(
+            accessModifier: accessModifier,
+            attachedMacros: attachedMacros,
+            componentsYAML: componentsYAML
+        )
         let components = translator.components
         let componentParameters = try components.parameters.mapValues { try components.assumeLookupOnce($0) }
         let translation = try translator.translateComponentParameters(componentParameters)
@@ -6965,6 +7313,7 @@ extension SnippetBasedReferenceTests {
 
     func assertResponsesTranslation(
         featureFlags: FeatureFlags = [],
+        attachedMacros: AttachedMacros = .init(),
         ignoredDiagnosticMessages: Set<String> = [],
         _ componentsYAML: String,
         _ expectedSwift: String,
@@ -6973,6 +7322,7 @@ extension SnippetBasedReferenceTests {
     ) throws {
         let translator = try makeTypesTranslator(
             featureFlags: featureFlags,
+            attachedMacros: attachedMacros,
             ignoredDiagnosticMessages: ignoredDiagnosticMessages,
             componentsYAML: componentsYAML
         )
@@ -6984,6 +7334,7 @@ extension SnippetBasedReferenceTests {
 
     func assertRequestBodiesTranslation(
         featureFlags: FeatureFlags = [],
+        attachedMacros: AttachedMacros = .init(),
         ignoredDiagnosticMessages: Set<String> = [],
         _ componentsYAML: String,
         _ expectedSwift: String,
@@ -6992,6 +7343,7 @@ extension SnippetBasedReferenceTests {
     ) throws {
         let translator = try makeTypesTranslator(
             featureFlags: featureFlags,
+            attachedMacros: attachedMacros,
             ignoredDiagnosticMessages: ignoredDiagnosticMessages,
             componentsYAML: componentsYAML
         )
@@ -7072,12 +7424,6 @@ private func XCTAssertEqualWithDiff(
         file: file,
         line: line
     )
-}
-
-private func renderedSwift(_ declaration: Declaration) -> String {
-    let renderer = TextBasedRenderer.default
-    renderer.renderDeclaration(declaration.strippingComments)
-    return renderer.renderedContents()
 }
 
 private func XCTAssertSwiftEquivalent(

@@ -2214,9 +2214,9 @@ final class SnippetBasedReferenceTests: XCTestCase {
         try assertSchemasTranslation(
             attachedMacros: .init(
                 components: .init(schemas: [
-                    .init(match: ".*", macros: [.init(name: "AllSchemas")]),
+                    .init(macros: [.init(name: "AllSchemas")]),
                     .init(
-                        match: "^Pet$",
+                        filter: "^Pet$",
                         macros: [
                             .init(name: "AllSchemas"),
                             .init(name: "PetMacro", arguments: [.init(label: "name", value: .literal(.string("Pet")))]),
@@ -2263,9 +2263,9 @@ final class SnippetBasedReferenceTests: XCTestCase {
         try assertSchemasTranslation(
             attachedMacros: .init(
                 components: .init(schemas: [
-                    .init(match: "^pet-store$", macros: [.init(name: "OpenAPIName")]),
-                    .init(match: "^pet_hyphen_store$", macros: [.init(name: "SwiftName")]),
-                    .init(match: "^PET", macros: [.init(name: "CaseSensitive")]),
+                    .init(filter: "^pet-store$", macros: [.init(name: "OpenAPIName")]),
+                    .init(filter: "^pet_hyphen_store$", macros: [.init(name: "SwiftName")]),
+                    .init(filter: "^PET", macros: [.init(name: "CaseSensitive")]),
                 ])
             ),
             """
@@ -2283,7 +2283,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
     }
     func testAttachedMacrosSchemasInlineTypes() throws {
         try assertSchemasTranslation(
-            attachedMacros: .init(components: .init(schemas: [.init(match: ".*", macros: [.init(name: "Macro")])])),
+            attachedMacros: .init(components: .init(schemas: [.init(filter: ".*", macros: [.init(name: "Macro")])])),
             """
             schemas:
               Pet:
@@ -2315,7 +2315,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
     }
     func testAttachedMacrosSchemasRecursive() throws {
         try assertSchemasTranslation(
-            attachedMacros: .init(components: .init(schemas: [.init(match: "^Node$", macros: [.init(name: "Macro")])])),
+            attachedMacros: .init(components: .init(schemas: [.init(filter: "^Node$", macros: [.init(name: "Macro")])])),
             """
             schemas:
               Node:
@@ -2364,7 +2364,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
     func testAttachedMacrosSchemasTypeOverride() throws {
         try assertSchemasTranslation(
             typeOverrides: TypeOverrides(schemas: ["UUID": "Foundation.UUID"]),
-            attachedMacros: .init(components: .init(schemas: [.init(match: "^UUID$", macros: [.init(name: "Macro")])])),
+            attachedMacros: .init(components: .init(schemas: [.init(filter: "^UUID$", macros: [.init(name: "Macro")])])),
             """
             schemas:
               UUID:
@@ -2382,7 +2382,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
     func testAttachedMacrosParameters() throws {
         try assertParametersTranslation(
             attachedMacros: .init(
-                components: .init(parameters: [.init(match: "^kind$", macros: [.init(name: "Macro")])])
+                components: .init(parameters: [.init(filter: "^kind$", macros: [.init(name: "Macro")])])
             ),
             """
             parameters:
@@ -2413,7 +2413,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
     func testAttachedMacrosRequestBodies() throws {
         try assertRequestBodiesTranslation(
             attachedMacros: .init(
-                components: .init(requestBodies: [.init(match: "^MyBody$", macros: [.init(name: "Macro")])])
+                components: .init(requestBodies: [.init(filter: "^MyBody$", macros: [.init(name: "Macro")])])
             ),
             """
             requestBodies:
@@ -2437,7 +2437,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
     func testAttachedMacrosResponses() throws {
         try assertResponsesTranslation(
             attachedMacros: .init(
-                components: .init(responses: [.init(match: "^BadRequest$", macros: [.init(name: "Macro")])])
+                components: .init(responses: [.init(filter: "^BadRequest$", macros: [.init(name: "Macro")])])
             ),
             """
             responses:
@@ -2456,7 +2456,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
     }
     func testAttachedMacrosHeaders() throws {
         try assertHeadersTranslation(
-            attachedMacros: .init(components: .init(headers: [.init(match: "^Trace", macros: [.init(name: "Macro")])])),
+            attachedMacros: .init(components: .init(headers: [.init(filter: "^Trace", macros: [.init(name: "Macro")])])),
             """
             headers:
               TraceID:
@@ -2477,7 +2477,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
         try XCTAssertSwiftEquivalent(
             types.translateOperation(XCTUnwrap(operations.first { $0.operationID == "createPet" })),
             """
-            @Namespace
+            @Operation
             public enum createPet {
                 public static let id: Swift.String = "createPet"
                 @Input
@@ -7005,14 +7005,14 @@ extension SnippetBasedReferenceTests {
     static let operationAttachedMacros = AttachedMacros(
         operations: [
             .init(
-                match: "^createPet$",
-                namespace: [.init(name: "Namespace")],
+                filter: "^createPet$",
+                operation: [.init(name: "Operation")],
                 input: [.init(name: "Input")],
                 output: [.init(name: "Output")],
                 protocolMethod: [.init(name: "ProtocolMethod")],
                 clientMethod: [.init(name: "ClientMethod")]
             ),
-            .init(match: #"^get/pets/\{petId\}$"#, protocolMethod: [.init(name: "Deprecated")]),
+            .init(filter: #"^get/pets/\{petId\}$"#, protocolMethod: [.init(name: "Deprecated")]),
         ],
         apiProtocol: [.init(name: "Mockable")],
         client: [.init(name: "ClientMacro")],

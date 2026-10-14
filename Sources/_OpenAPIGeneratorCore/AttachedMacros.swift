@@ -95,18 +95,19 @@ public struct AttachedMacros: Sendable, Equatable {
     /// A rule that attaches macros to the components whose OpenAPI name matches a regular expression.
     public struct ComponentRule: Sendable, Equatable {
 
-        /// A regular expression matched against the OpenAPI name of the component.
-        public var match: String
+        /// A regular expression matched against the OpenAPI name of the component, or `nil` to match all components.
+        public var filter: String?
 
         /// Macros attached to the matched components.
         public var macros: [AttachedMacro]
 
         /// Creates a new instance.
         /// - Parameters:
-        ///   - match: A regular expression matched against the OpenAPI name of the component.
+        ///   - filter: A regular expression matched against the OpenAPI name of the component,
+        ///     or `nil` to match all components.
         ///   - macros: Macros attached to the matched components.
-        public init(match: String, macros: [AttachedMacro]) {
-            self.match = match
+        public init(filter: String? = nil, macros: [AttachedMacro]) {
+            self.filter = filter
             self.macros = macros
         }
     }
@@ -114,11 +115,11 @@ public struct AttachedMacros: Sendable, Equatable {
     /// A rule that attaches macros to the declarations of operations whose identifier matches a regular expression.
     public struct OperationRule: Sendable, Equatable {
 
-        /// A regular expression matched against the operation identifier.
-        public var match: String
+        /// A regular expression matched against the operation identifier, or `nil` to match all operations.
+        public var filter: String?
 
         /// Macros attached to the `Operations.<Op>` namespace.
-        public var namespace: [AttachedMacro]
+        public var operation: [AttachedMacro]
 
         /// Macros attached to `Operations.<Op>.Input`.
         public var input: [AttachedMacro]
@@ -134,22 +135,23 @@ public struct AttachedMacros: Sendable, Equatable {
 
         /// Creates a new instance.
         /// - Parameters:
-        ///   - match: A regular expression matched against the operation identifier.
-        ///   - namespace: Macros attached to the `Operations.<Op>` namespace.
+        ///   - filter: A regular expression matched against the operation identifier,
+        ///     or `nil` to match all operations.
+        ///   - operation: Macros attached to the `Operations.<Op>` namespace.
         ///   - input: Macros attached to `Operations.<Op>.Input`.
         ///   - output: Macros attached to `Operations.<Op>.Output`.
         ///   - protocolMethod: Macros attached to the `APIProtocol` requirement of the operation.
         ///   - clientMethod: Macros attached to the `Client` method of the operation.
         public init(
-            match: String,
-            namespace: [AttachedMacro] = [],
+            filter: String? = nil,
+            operation: [AttachedMacro] = [],
             input: [AttachedMacro] = [],
             output: [AttachedMacro] = [],
             protocolMethod: [AttachedMacro] = [],
             clientMethod: [AttachedMacro] = []
         ) {
-            self.match = match
-            self.namespace = namespace
+            self.filter = filter
+            self.operation = operation
             self.input = input
             self.output = output
             self.protocolMethod = protocolMethod
@@ -239,7 +241,7 @@ extension AttachedMacros {
     ///   - name: The OpenAPI name to match.
     /// - Returns: The matching macros.
     static func macros(in rules: [ComponentRule], matching name: String) -> [AttachedMacro] {
-        uniqued(rules.filter { matches($0.match, name) }.flatMap(\.macros))
+        uniqued(rules.filter { matches($0.filter, name) }.flatMap(\.macros))
     }
 
     /// Returns the macros of the operation rules that match the provided operation identifier,
@@ -249,15 +251,16 @@ extension AttachedMacros {
     ///   - operationID: The operation identifier to match.
     /// - Returns: The matching macros.
     func macros(for target: KeyPath<OperationRule, [AttachedMacro]>, operationID: String) -> [AttachedMacro] {
-        Self.uniqued(operations.filter { Self.matches($0.match, operationID) }.flatMap { $0[keyPath: target] })
+        Self.uniqued(operations.filter { Self.matches($0.filter, operationID) }.flatMap { $0[keyPath: target] })
     }
 
     /// Returns whether the regular expression matches anywhere in the provided name.
     /// - Parameters:
-    ///   - pattern: The regular expression.
+    ///   - pattern: The regular expression, or `nil` to match any name.
     ///   - name: The name to match.
-    /// - Returns: `true` if the pattern matches; `false` otherwise, including when the pattern is invalid.
-    static func matches(_ pattern: String, _ name: String) -> Bool {
+    /// - Returns: `true` if the pattern is `nil` or matches; `false` otherwise, including when the pattern is invalid.
+    static func matches(_ pattern: String?, _ name: String) -> Bool {
+        guard let pattern else { return true }
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
         return regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil
     }
@@ -325,7 +328,7 @@ extension AttachedMacros.Components: Codable {
 
 extension AttachedMacros.ComponentRule: Codable {
     enum CodingKeys: String, CaseIterable, CodingKey {
-        case match
+        case filter
         case macros
     }
 
@@ -336,7 +339,7 @@ extension AttachedMacros.ComponentRule: Codable {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            match: try container.decodeRegularExpression(forKey: .match),
+            filter: try container.decodeRegularExpressionIfPresent(forKey: .filter),
             macros: try container.decode([AttachedMacro].self, forKey: .macros)
         )
     }
@@ -344,8 +347,8 @@ extension AttachedMacros.ComponentRule: Codable {
 
 extension AttachedMacros.OperationRule: Codable {
     enum CodingKeys: String, CaseIterable, CodingKey {
-        case match
-        case namespace
+        case filter
+        case operation
         case input
         case output
         case protocolMethod
@@ -359,8 +362,8 @@ extension AttachedMacros.OperationRule: Codable {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            match: try container.decodeRegularExpression(forKey: .match),
-            namespace: try container.decodeIfPresent([AttachedMacro].self, forKey: .namespace) ?? [],
+            filter: try container.decodeRegularExpressionIfPresent(forKey: .filter),
+            operation: try container.decodeIfPresent([AttachedMacro].self, forKey: .operation) ?? [],
             input: try container.decodeIfPresent([AttachedMacro].self, forKey: .input) ?? [],
             output: try container.decodeIfPresent([AttachedMacro].self, forKey: .output) ?? [],
             protocolMethod: try container.decodeIfPresent([AttachedMacro].self, forKey: .protocolMethod) ?? [],
@@ -539,12 +542,12 @@ extension Decoder {
 
 extension KeyedDecodingContainer {
 
-    /// Decodes a string and checks that it's a valid regular expression.
+    /// Decodes a string, if present, and checks that it's a valid regular expression.
     /// - Parameter key: The key to decode.
-    /// - Returns: The regular expression pattern.
-    /// - Throws: An error if the value is missing or isn't a valid regular expression.
-    fileprivate func decodeRegularExpression(forKey key: Key) throws -> String {
-        let pattern = try decode(String.self, forKey: key)
+    /// - Returns: The regular expression pattern, or `nil` if the key is missing.
+    /// - Throws: An error if the value isn't a valid regular expression.
+    fileprivate func decodeRegularExpressionIfPresent(forKey key: Key) throws -> String? {
+        guard let pattern = try decodeIfPresent(String.self, forKey: key) else { return nil }
         do { _ = try NSRegularExpression(pattern: pattern) } catch {
             throw DecodingError.dataCorruptedError(
                 forKey: key,

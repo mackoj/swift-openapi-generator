@@ -115,34 +115,44 @@ extension TypesFileTranslator {
         operations: [OperationDescription]
     ) throws {
         let attachedMacros = config.attachedMacros
-        let ruleGroups: [(path: String, patterns: [String], names: [String])] = [
+        let ruleGroups: [(path: String, patterns: [String?], names: [String])] = [
             (
-                "components.schemas", attachedMacros.components.schemas.map(\.match),
+                "components.schemas", attachedMacros.components.schemas.map(\.filter),
                 components.schemas.keys.map(\.rawValue)
             ),
             (
-                "components.parameters", attachedMacros.components.parameters.map(\.match),
+                "components.parameters", attachedMacros.components.parameters.map(\.filter),
                 components.parameters.keys.map(\.rawValue)
             ),
             (
-                "components.requestBodies", attachedMacros.components.requestBodies.map(\.match),
+                "components.requestBodies", attachedMacros.components.requestBodies.map(\.filter),
                 components.requestBodies.keys.map(\.rawValue)
             ),
             (
-                "components.responses", attachedMacros.components.responses.map(\.match),
+                "components.responses", attachedMacros.components.responses.map(\.filter),
                 components.responses.keys.map(\.rawValue)
             ),
             (
-                "components.headers", attachedMacros.components.headers.map(\.match),
+                "components.headers", attachedMacros.components.headers.map(\.filter),
                 components.headers.keys.map(\.rawValue)
-            ), ("operations", attachedMacros.operations.map(\.match), operations.map(\.operationID)),
+            ), ("operations", attachedMacros.operations.map(\.filter), operations.map(\.operationID)),
         ]
         for (path, patterns, names) in ruleGroups {
             for pattern in patterns where !names.contains(where: { AttachedMacros.matches(pattern, $0) }) {
+                guard let pattern else {
+                    try diagnostics.emit(
+                        .warning(
+                            message: "The attached macros rule without a filter in '\(path)' doesn't match anything.",
+                            context: ["path": path]
+                        )
+                    )
+                    continue
+                }
                 try diagnostics.emit(
                     .warning(
-                        message: "The attached macros rule matching '\(pattern)' in '\(path)' doesn't match anything.",
-                        context: ["path": path, "match": pattern]
+                        message:
+                            "The attached macros rule with filter '\(pattern)' in '\(path)' doesn't match anything.",
+                        context: ["path": path, "filter": pattern]
                     )
                 )
             }

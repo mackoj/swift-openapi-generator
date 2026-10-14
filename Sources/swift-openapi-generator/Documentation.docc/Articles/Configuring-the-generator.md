@@ -184,7 +184,7 @@ additionalImports:
 attachedMacros:
   components:
     schemas:
-      - match: "^Pet$"
+      - filter: "^Pet$"
         macros:
           - name: MyMacro
             arguments:

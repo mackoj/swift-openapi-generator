@@ -158,7 +158,7 @@ final class Test_GenerateOptions: XCTestCase {
             attachedMacros:
               components:
                 schemas:
-                  - match: "^Pet$"
+                  - filter: "^Pet$"
                     macros:
                       - name: SchemaMacro
                         arguments:
@@ -167,20 +167,20 @@ final class Test_GenerateOptions: XCTestCase {
                           - label: mode
                             expression: .live
                 parameters:
-                  - match: "^limit$"
+                  - filter: "^limit$"
                     macros: [ParameterMacro]
                 requestBodies:
-                  - match: "^PetBody$"
+                  - filter: "^PetBody$"
                     macros: [RequestBodyMacro]
                 responses:
-                  - match: "^PetResponse$"
+                  - filter: "^PetResponse$"
                     macros: [ResponseMacro]
                 headers:
-                  - match: "^Trace$"
+                  - filter: "^Trace$"
                     macros: [HeaderMacro]
               operations:
-                - match: "^createPet$"
-                  namespace: [NamespaceMacro]
+                - filter: "^createPet$"
+                  operation: [OperationMacro]
                   input: [InputMacro]
                   output: [OutputMacro]
                   protocolMethod: [ProtocolMethodMacro]
@@ -205,7 +205,7 @@ final class Test_GenerateOptions: XCTestCase {
             (.typesComponentsRequestBodies, "@RequestBodyMacro\n        @frozen public enum PetBody:"),
             (.typesComponentsResponses, "@ResponseMacro\n        public struct PetResponse:"),
             (.typesComponentsHeaders, "@HeaderMacro\n        public typealias Trace ="),
-            (.typesOperations, "@NamespaceMacro\n    public enum createPet {"),
+            (.typesOperations, "@OperationMacro\n    public enum createPet {"),
             (.typesOperations, "@InputMacro\n        public struct Input:"),
             (.typesOperations, "@OutputMacro\n        @frozen public enum Output:"),
             (.types, "@APIProtocolMacro\npublic protocol APIProtocol:"),

@@ -247,7 +247,7 @@ extension TypesFileTranslator {
             )
         )
         return operationEnumDecl.attaching(
-            attachedMacros.macros(for: \.namespace, operationID: operation.operationID)
+            attachedMacros.macros(for: \.operation, operationID: operation.operationID)
         )
     }
 

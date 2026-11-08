@@ -127,9 +127,6 @@ public struct AttachedMacros: Sendable, Equatable {
         /// Macros attached to `Operations.<Op>.Output`.
         public var output: [AttachedMacro]
 
-        /// Macros attached to the `APIProtocol` requirement of the operation.
-        public var protocolMethod: [AttachedMacro]
-
         /// Macros attached to the `Client` method of the operation.
         public var clientMethod: [AttachedMacro]
 
@@ -140,21 +137,18 @@ public struct AttachedMacros: Sendable, Equatable {
         ///   - operation: Macros attached to the `Operations.<Op>` namespace.
         ///   - input: Macros attached to `Operations.<Op>.Input`.
         ///   - output: Macros attached to `Operations.<Op>.Output`.
-        ///   - protocolMethod: Macros attached to the `APIProtocol` requirement of the operation.
         ///   - clientMethod: Macros attached to the `Client` method of the operation.
         public init(
             filter: String? = nil,
             operation: [AttachedMacro] = [],
             input: [AttachedMacro] = [],
             output: [AttachedMacro] = [],
-            protocolMethod: [AttachedMacro] = [],
             clientMethod: [AttachedMacro] = []
         ) {
             self.filter = filter
             self.operation = operation
             self.input = input
             self.output = output
-            self.protocolMethod = protocolMethod
             self.clientMethod = clientMethod
         }
     }
@@ -184,74 +178,38 @@ public struct AttachedMacro: Sendable, Equatable {
         /// The label of the argument, if any.
         public var label: String?
 
-        /// The value of the argument.
-        public var value: Value
+        /// The value of the argument, as Swift source emitted verbatim.
+        public var value: String
 
         /// Creates a new instance.
         /// - Parameters:
         ///   - label: The label of the argument, if any.
-        ///   - value: The value of the argument.
-        public init(label: String? = nil, value: Value) {
+        ///   - value: The value of the argument, as Swift source emitted verbatim.
+        public init(label: String? = nil, value: String) {
             self.label = label
             self.value = value
         }
-    }
-
-    /// The value of an argument.
-    public enum Value: Sendable, Equatable {
-
-        /// A literal, converted to Swift literal syntax.
-        case literal(Literal)
-
-        /// Swift source emitted verbatim.
-        case expression(String)
-    }
-
-    /// A literal value of an argument.
-    public indirect enum Literal: Sendable, Equatable {
-
-        /// A string literal.
-        case string(String)
-
-        /// An integer literal.
-        case int(Int)
-
-        /// A floating-point literal.
-        case double(Double)
-
-        /// A Boolean literal.
-        case bool(Bool)
-
-        /// The `nil` literal.
-        case `nil`
-
-        /// An array literal.
-        case array([Literal])
-
-        /// A dictionary literal with string keys.
-        case dictionary([String: Literal])
     }
 }
 
 extension AttachedMacros {
 
-    /// Returns the macros of the rules that match the provided name, in rule order and without duplicates.
+    /// Returns the macros of the rules that match the provided name, in rule order.
     /// - Parameters:
     ///   - rules: The rules to evaluate.
     ///   - name: The OpenAPI name to match.
     /// - Returns: The matching macros.
     static func macros(in rules: [ComponentRule], matching name: String) -> [AttachedMacro] {
-        uniqued(rules.filter { matches($0.filter, name) }.flatMap(\.macros))
+        rules.filter { matches($0.filter, name) }.flatMap(\.macros)
     }
 
-    /// Returns the macros of the operation rules that match the provided operation identifier,
-    /// in rule order and without duplicates.
+    /// Returns the macros of the operation rules that match the provided operation identifier, in rule order.
     /// - Parameters:
     ///   - target: The target within each matching rule.
     ///   - operationID: The operation identifier to match.
     /// - Returns: The matching macros.
     func macros(for target: KeyPath<OperationRule, [AttachedMacro]>, operationID: String) -> [AttachedMacro] {
-        Self.uniqued(operations.filter { Self.matches($0.filter, operationID) }.flatMap { $0[keyPath: target] })
+        operations.filter { Self.matches($0.filter, operationID) }.flatMap { $0[keyPath: target] }
     }
 
     /// Returns whether the regular expression matches anywhere in the provided name.
@@ -263,15 +221,6 @@ extension AttachedMacros {
         guard let pattern else { return true }
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
         return regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil
-    }
-
-    /// Returns the macros with duplicates removed, keeping the first occurrence.
-    /// - Parameter macros: The macros.
-    /// - Returns: The macros without duplicates.
-    private static func uniqued(_ macros: [AttachedMacro]) -> [AttachedMacro] {
-        var result: [AttachedMacro] = []
-        for macro in macros where !result.contains(macro) { result.append(macro) }
-        return result
     }
 }
 
@@ -351,7 +300,6 @@ extension AttachedMacros.OperationRule: Codable {
         case operation
         case input
         case output
-        case protocolMethod
         case clientMethod
     }
 
@@ -366,7 +314,6 @@ extension AttachedMacros.OperationRule: Codable {
             operation: try container.decodeIfPresent([AttachedMacro].self, forKey: .operation) ?? [],
             input: try container.decodeIfPresent([AttachedMacro].self, forKey: .input) ?? [],
             output: try container.decodeIfPresent([AttachedMacro].self, forKey: .output) ?? [],
-            protocolMethod: try container.decodeIfPresent([AttachedMacro].self, forKey: .protocolMethod) ?? [],
             clientMethod: try container.decodeIfPresent([AttachedMacro].self, forKey: .clientMethod) ?? []
         )
     }
@@ -379,15 +326,9 @@ extension AttachedMacro: Codable {
     }
 
     /// Creates a new instance by decoding from the given decoder.
-    ///
-    /// Accepts either a string with the macro name, or an object with a name and arguments.
     /// - Parameter decoder: The decoder to read data from.
     /// - Throws: An error if the data is invalid or contains unknown keys.
     public init(from decoder: any Decoder) throws {
-        if let name = try? decoder.singleValueContainer().decode(String.self) {
-            self.init(name: try Self.validatedName(name, codingPath: decoder.codingPath))
-            return
-        }
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
@@ -413,9 +354,9 @@ extension AttachedMacro: Codable {
     ///   - name: The macro name.
     ///   - codingPath: The coding path used in the error.
     /// - Returns: The validated name.
-    /// - Throws: An error if the name is empty or starts with `@`.
+    /// - Throws: An error if the name starts with `@`.
     private static func validatedName(_ name: String, codingPath: [any CodingKey]) throws -> String {
-        guard !name.isEmpty, !name.hasPrefix("@") else {
+        guard !name.hasPrefix("@") else {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: codingPath,
@@ -432,83 +373,18 @@ extension AttachedMacro.Argument: Codable {
     enum CodingKeys: String, CaseIterable, CodingKey {
         case label
         case value
-        case expression
     }
 
     /// Creates a new instance by decoding from the given decoder.
     /// - Parameter decoder: The decoder to read data from.
-    /// - Throws: An error if the data is invalid, contains unknown keys, or doesn't contain exactly one
-    ///   of `value` or `expression`.
+    /// - Throws: An error if the data is invalid or contains unknown keys.
     public init(from decoder: any Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let label = try container.decodeIfPresent(String.self, forKey: .label)
-        switch (container.contains(.value), container.contains(.expression)) {
-        case (true, false):
-            self.init(label: label, value: .literal(try container.decode(AttachedMacro.Literal.self, forKey: .value)))
-        case (false, true):
-            self.init(label: label, value: .expression(try container.decode(String.self, forKey: .expression)))
-        default:
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "A macro argument must have exactly one of 'value' or 'expression'."
-                )
-            )
-        }
-    }
-
-    /// Encodes this value into the given encoder.
-    /// - Parameter encoder: The encoder to write data to.
-    /// - Throws: An error if encoding fails.
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(label, forKey: .label)
-        switch value {
-        case .literal(let literal): try container.encode(literal, forKey: .value)
-        case .expression(let expression): try container.encode(expression, forKey: .expression)
-        }
-    }
-}
-
-extension AttachedMacro.Literal: Codable {
-
-    /// Creates a new instance by decoding from the given decoder.
-    /// - Parameter decoder: The decoder to read data from.
-    /// - Throws: An error if the value isn't a scalar, sequence, or mapping.
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .nil
-        } else if let value = try? container.decode(Bool.self) {
-            self = .bool(value)
-        } else if let value = try? container.decode(Int.self) {
-            self = .int(value)
-        } else if let value = try? container.decode(Double.self) {
-            self = .double(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
-        } else if let value = try? container.decode([Self].self) {
-            self = .array(value)
-        } else {
-            self = .dictionary(try container.decode([String: Self].self))
-        }
-    }
-
-    /// Encodes this value into the given encoder.
-    /// - Parameter encoder: The encoder to write data to.
-    /// - Throws: An error if encoding fails.
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .string(let value): try container.encode(value)
-        case .int(let value): try container.encode(value)
-        case .double(let value): try container.encode(value)
-        case .bool(let value): try container.encode(value)
-        case .nil: try container.encodeNil()
-        case .array(let value): try container.encode(value)
-        case .dictionary(let value): try container.encode(value)
-        }
+        self.init(
+            label: try container.decodeIfPresent(String.self, forKey: .label),
+            value: try container.decode(String.self, forKey: .value)
+        )
     }
 }
 

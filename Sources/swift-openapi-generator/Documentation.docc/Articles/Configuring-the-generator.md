@@ -189,9 +189,9 @@ attachedMacros:
           - name: MyMacro
             arguments:
               - label: name
-                value: Pet
+                value: '"Pet"'
   apiProtocol:
-    - Mockable
+    - name: Mockable
 ```
 
 Check out [SOAR-0016](https://swiftpackageindex.com/apple/swift-openapi-generator/documentation/swift-openapi-generator/soar-0016) for details.

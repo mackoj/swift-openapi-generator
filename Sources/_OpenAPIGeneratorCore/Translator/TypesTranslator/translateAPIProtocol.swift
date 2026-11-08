@@ -104,6 +104,5 @@ extension TypesFileTranslator {
         let signature = description.protocolSignatureDescription
         let function = FunctionDescription(signature: signature)
         return .commentable(operationComment, .function(function).deprecate(if: description.operation.deprecated))
-            .attaching(config.attachedMacros.macros(for: \.protocolMethod, operationID: description.operationID))
     }
 }

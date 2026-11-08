@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 import XCTest
-import OpenAPIKit
 import Yams
 @testable import _OpenAPIGeneratorCore
 
@@ -34,30 +33,29 @@ final class Test_AttachedMacros: Test_Core {
                     components:
                       schemas:
                         - filter: "^Schema$"
-                          macros: [Schema]
+                          macros: [{name: Schema}]
                       parameters:
                         - filter: "^Parameter$"
-                          macros: [Parameter]
+                          macros: [{name: Parameter}]
                       requestBodies:
                         - filter: "^RequestBody$"
-                          macros: [RequestBody]
+                          macros: [{name: RequestBody}]
                       responses:
                         - filter: "^Response$"
-                          macros: [Response]
+                          macros: [{name: Response}]
                       headers:
                         - filter: "^Header$"
-                          macros: [Header]
+                          macros: [{name: Header}]
                     operations:
                       - filter: "^createPet$"
-                        operation: [Operation]
-                        input: [Input]
-                        output: [Output]
-                        protocolMethod: [ProtocolMethod]
-                        clientMethod: [ClientMethod]
+                        operation: [{name: Operation}]
+                        input: [{name: Input}]
+                        output: [{name: Output}]
+                        clientMethod: [{name: ClientMethod}]
                       - filter: "^listPets$"
-                    apiProtocol: [APIProtocol]
-                    client: [Client]
-                    server: [Server]
+                    apiProtocol: [{name: APIProtocol}]
+                    client: [{name: Client}]
+                    server: [{name: Server}]
                     """
             )
         XCTAssertEqual(
@@ -76,7 +74,6 @@ final class Test_AttachedMacros: Test_Core {
                         operation: [.init(name: "Operation")],
                         input: [.init(name: "Input")],
                         output: [.init(name: "Output")],
-                        protocolMethod: [.init(name: "ProtocolMethod")],
                         clientMethod: [.init(name: "ClientMethod")]
                     ), .init(filter: "^listPets$"),
                 ],
@@ -94,9 +91,9 @@ final class Test_AttachedMacros: Test_Core {
                 from: """
                     components:
                       schemas:
-                        - macros: [Schema]
+                        - macros: [{name: Schema}]
                     operations:
-                      - input: [Input]
+                      - input: [{name: Input}]
                     """
             )
         XCTAssertEqual(
@@ -112,65 +109,53 @@ final class Test_AttachedMacros: Test_Core {
         let macros = try YAMLDecoder()
             .decode(
                 [AttachedMacro].self,
-                from: """
-                    - Mockable
+                from: #"""
                     - name: Mockable
                     - name: Module.Macro
                       arguments: []
                     - name: DependencyClientWrapper
                       arguments:
                         - label: name
-                          value: PetStoreClient
+                          value: '"PetStoreClient"'
                         - label: mode
-                          expression: .live
-                        - expression: Foo.self
-                    """
+                          value: .live
+                        - value: Foo.self
+                        - value: 42
+                        - value: true
+                    """#
             )
         XCTAssertEqual(
             macros,
             [
-                .init(name: "Mockable"), .init(name: "Mockable"), .init(name: "Module.Macro"),
+                .init(name: "Mockable"), .init(name: "Module.Macro"),
                 .init(
                     name: "DependencyClientWrapper",
                     arguments: [
-                        .init(label: "name", value: .literal(.string("PetStoreClient"))),
-                        .init(label: "mode", value: .expression(".live")), .init(value: .expression("Foo.self")),
+                        .init(label: "name", value: #""PetStoreClient""#), .init(label: "mode", value: ".live"),
+                        .init(value: "Foo.self"), .init(value: "42"), .init(value: "true"),
                     ]
                 ),
             ]
         )
     }
 
-    func testDecodingLiterals() throws {
-        let cases: [(String, AttachedMacro.Literal)] = [
-            ("PetStoreClient", .string("PetStoreClient")), ("'3'", .string("3")), ("\"true\"", .string("true")),
-            ("''", .string("")), ("3", .int(3)), ("-3", .int(-3)), ("0.5", .double(0.5)), ("-1.5", .double(-1.5)),
-            ("true", .bool(true)), ("false", .bool(false)), ("null", .nil), ("[]", .array([])),
-            ("[a, 1, [true]]", .array([.string("a"), .int(1), .array([.bool(true)])])), ("{}", .dictionary([:])),
-            ("{max: 3, nested: {list: [a]}}", .dictionary(["max": .int(3), "nested": .dictionary(["list": .array([.string("a")])])])),
-        ]
-        for (yaml, expected) in cases {
-            let decoded = try YAMLDecoder().decode([String: AttachedMacro.Literal].self, from: "value: \(yaml)")
-            XCTAssertEqual(decoded["value"], expected, yaml)
-        }
-    }
-
     func testDecodingErrors() throws {
         let invalidConfigs = [
             // Unknown keys at every level.
-            "clients: [A]", "components: {examples: []}", "components: {schemas: [{filter: A, macro: [A]}]}",
-            "operations: [{filter: A, ouput: [A]}]", "apiProtocol: [{name: A, argument: []}]",
+            "clients: [{name: A}]", "components: {examples: []}", "components: {schemas: [{filter: A, macro: [{name: A}]}]}",
+            "operations: [{filter: A, ouput: [{name: A}]}]", "apiProtocol: [{name: A, argument: []}]",
             "apiProtocol: [{name: A, arguments: [{lable: x, value: 1}]}]",
             // Missing required keys.
             "components: {schemas: [{filter: A}]}", "apiProtocol: [{arguments: []}]",
             // Invalid regular expressions.
-            "components: {schemas: [{filter: '(', macros: [A]}]}", "operations: [{filter: '[', input: [A]}]",
+            "components: {schemas: [{filter: '(', macros: [{name: A}]}]}", "operations: [{filter: '[', input: [{name: A}]}]",
             // Invalid macro names.
-            "apiProtocol: ['@Mockable']", "apiProtocol: [{name: '@Mockable'}]", "apiProtocol: ['']",
-            "apiProtocol: [{name: [A]}]",
-            // Arguments without exactly one of value or expression.
+            "apiProtocol: [{name: '@Mockable'}]", "apiProtocol: [{name: [{name: A}]}]",
+            // Macros that aren't objects.
+            "apiProtocol: [A]",
+            // Arguments without a value, or with an unknown key.
             "apiProtocol: [{name: A, arguments: [{label: x}]}]",
-            "apiProtocol: [{name: A, arguments: [{value: 1, expression: '2'}]}]",
+            "apiProtocol: [{name: A, arguments: [{value: '1', expression: '2'}]}]",
             // Wrong types.
             "apiProtocol: A", "operations: {filter: A}",
         ]
@@ -189,19 +174,15 @@ final class Test_AttachedMacros: Test_Core {
             }
         }
         XCTAssertEqual(
-            message("operations: [{filter: A, ouput: [A]}]"),
-            "Unknown key 'ouput'. Allowed keys: clientMethod, filter, input, operation, output, protocolMethod."
+            message("operations: [{filter: A, ouput: [{name: A}]}]"),
+            "Unknown key 'ouput'. Allowed keys: clientMethod, filter, input, operation, output."
         )
         XCTAssertEqual(
-            message("apiProtocol: ['@Mockable']"),
+            message("apiProtocol: [{name: '@Mockable'}]"),
             "Invalid macro name '@Mockable'. Provide the name without the leading '@', for example 'Mockable'."
         )
         XCTAssertEqual(
-            message("apiProtocol: [{name: A, arguments: [{label: x}]}]"),
-            "A macro argument must have exactly one of 'value' or 'expression'."
-        )
-        XCTAssertEqual(
-            message("components: {schemas: [{filter: '(', macros: [A]}]}")?.hasPrefix("Invalid regular expression '('"),
+            message("components: {schemas: [{filter: '(', macros: [{name: A}]}]}")?.hasPrefix("Invalid regular expression '('"),
             true
         )
     }
@@ -213,11 +194,7 @@ final class Test_AttachedMacros: Test_Core {
             apiProtocol: [
                 .init(
                     name: "C",
-                    arguments: [
-                        .init(label: "name", value: .literal(.string("x"))), .init(value: .expression(".live")),
-                        .init(value: .literal(.array([.int(1), .double(0.5), .bool(true), .nil]))),
-                        .init(value: .literal(.dictionary(["k": .string("v")]))),
-                    ]
+                    arguments: [.init(label: "name", value: #""x""#), .init(value: ".live")]
                 )
             ]
         )
@@ -247,21 +224,18 @@ final class Test_AttachedMacros: Test_Core {
             .init(filter: ".*", macros: [.init(name: "A")]), .init(filter: "^Pet$", macros: [.init(name: "B")]),
             .init(filter: "Pet", macros: [.init(name: "A"), .init(name: "C")]), .init(macros: [.init(name: "D")]),
         ]
-        XCTAssertEqual(AttachedMacros.macros(in: rules, matching: "Pet").map(\.name), ["A", "B", "C", "D"])
-        XCTAssertEqual(AttachedMacros.macros(in: rules, matching: "PetOwner").map(\.name), ["A", "C", "D"])
+        XCTAssertEqual(AttachedMacros.macros(in: rules, matching: "Pet").map(\.name), ["A", "B", "A", "C", "D"])
+        XCTAssertEqual(AttachedMacros.macros(in: rules, matching: "PetOwner").map(\.name), ["A", "A", "C", "D"])
         XCTAssertEqual(AttachedMacros.macros(in: rules, matching: "Owner").map(\.name), ["A", "D"])
         XCTAssertEqual(AttachedMacros.macros(in: [], matching: "Pet"), [])
     }
 
-    func testDuplicateMacros() {
+    func testDuplicateMacrosAreKept() {
         let a = AttachedMacro(name: "A")
-        let aWithArgument = AttachedMacro(name: "A", arguments: [.init(value: .literal(.int(1)))])
-        let aWithOtherArgument = AttachedMacro(name: "A", arguments: [.init(value: .literal(.int(2)))])
         let rules: [AttachedMacros.ComponentRule] = [
-            .init(filter: ".*", macros: [a, aWithArgument, a]),
-            .init(filter: ".*", macros: [aWithOtherArgument, aWithArgument]),
+            .init(filter: ".*", macros: [a, a]), .init(filter: ".*", macros: [a]),
         ]
-        XCTAssertEqual(AttachedMacros.macros(in: rules, matching: "Pet"), [a, aWithArgument, aWithOtherArgument])
+        XCTAssertEqual(AttachedMacros.macros(in: rules, matching: "Pet"), [a, a, a])
     }
 
     func testOperationRules() {
@@ -271,20 +245,15 @@ final class Test_AttachedMacros: Test_Core {
                 operation: [.init(name: "Operation")],
                 input: [.init(name: "Input")],
                 output: [.init(name: "Output")],
-                protocolMethod: [.init(name: "ProtocolMethod")],
                 clientMethod: [.init(name: "ClientMethod")]
             ), .init(filter: "Pet$", input: [.init(name: "Input"), .init(name: "PetInput")]),
             .init(output: [.init(name: "AllOutput")]),
         ])
         XCTAssertEqual(attachedMacros.macros(for: \.operation, operationID: "createPet").map(\.name), ["Operation"])
-        XCTAssertEqual(attachedMacros.macros(for: \.input, operationID: "createPet").map(\.name), ["Input", "PetInput"])
+        XCTAssertEqual(attachedMacros.macros(for: \.input, operationID: "createPet").map(\.name), ["Input", "Input", "PetInput"])
         XCTAssertEqual(
             attachedMacros.macros(for: \.output, operationID: "createPet").map(\.name),
             ["Output", "AllOutput"]
-        )
-        XCTAssertEqual(
-            attachedMacros.macros(for: \.protocolMethod, operationID: "createPet").map(\.name),
-            ["ProtocolMethod"]
         )
         XCTAssertEqual(attachedMacros.macros(for: \.clientMethod, operationID: "createPet").map(\.name), ["ClientMethod"])
         XCTAssertEqual(attachedMacros.macros(for: \.input, operationID: "getPet").map(\.name), ["Input", "PetInput"])
@@ -299,27 +268,13 @@ final class Test_AttachedMacros: Test_Core {
                 AttachedMacro(
                     name: "Foo",
                     arguments: [
-                        .init(label: "name", value: .literal(.string("Pet"))), .init(value: .literal(.int(1))),
-                        .init(label: "mode", value: .expression(".live")), .init(value: .expression("Foo.self")),
+                        .init(label: "name", value: #""Pet""#), .init(value: "1"),
+                        .init(label: "mode", value: ".live"), .init(value: "Foo.self"),
                     ]
                 )
             ),
             .init(name: "Foo", arguments: [#"name: "Pet""#, "1", "mode: .live", "Foo.self"])
         )
-    }
-
-    func testLiteralSwiftSource() {
-        let cases: [(AttachedMacro.Literal, String)] = [
-            (.string("Pet"), #""Pet""#), (.string(""), #""""#), (.string(#"a "b" \c"#), #""a \"b\" \\c""#),
-            (.string("a\nb\r\tc"), #""a\nb\r\tc""#), (.string("\u{1}"), #""\u{1}""#), (.string("Pét 🐶"), #""Pét 🐶""#),
-            (.int(0), "0"), (.int(-3), "-3"), (.double(0.5), "0.5"), (.double(-1.5), "-1.5"), (.double(1), "1.0"),
-            (.double(.nan), "Double.nan"), (.double(.infinity), "Double.infinity"),
-            (.double(-.infinity), "-Double.infinity"), (.bool(true), "true"), (.bool(false), "false"), (.nil, "nil"),
-            (.array([]), "[]"), (.array([.string("a"), .int(1), .array([.nil])]), #"["a", 1, [nil]]"#),
-            (.dictionary([:]), "[:]"), (.dictionary(["b": .int(2), "a": .dictionary(["c": .bool(true)])]), #"["a": ["c": true], "b": 2]"#),
-            (.dictionary(["\"": .int(1)]), #"["\"": 1]"#),
-        ]
-        for (literal, expected) in cases { XCTAssertEqual(literal.swiftSource, expected) }
     }
 
     func testAttaching() {
@@ -354,120 +309,5 @@ final class Test_AttachedMacros: Test_Core {
         XCTAssertNil(declaration.accessModifier)
         declaration.accessModifier = .public
         XCTAssertEqual(declaration, .attributed([.init(name: "A")], .struct(.init(accessModifier: .public, name: "Pet"))))
-    }
-
-    func testUnmatchedRuleWarnings() throws {
-        let rule = { (filter: String) in AttachedMacros.ComponentRule(filter: filter, macros: [.init(name: "A")]) }
-        let collector = AccumulatingDiagnosticCollector()
-        let translator = TypesFileTranslator(
-            config: Config(
-                mode: .types,
-                access: .public,
-                namingStrategy: .defensive,
-                attachedMacros: .init(
-                    components: .init(
-                        schemas: [rule("^Pet$"), rule("^Owner$")],
-                        parameters: [rule("^limit$"), rule("^offset$")],
-                        requestBodies: [rule("^Body$"), rule("^OtherBody$")],
-                        responses: [rule("^Ok$"), rule("^NotFound$")],
-                        headers: [rule("^Trace$"), rule("^Rate$")]
-                    ),
-                    operations: [.init(filter: "^createPet$"), .init(filter: "^deletePet$")]
-                )
-            ),
-            diagnostics: collector,
-            components: .noComponents
-        )
-        let paths = try YAMLDecoder()
-            .decode(
-                OpenAPI.PathItem.Map.self,
-                from: """
-                    /pets:
-                      post:
-                        operationId: createPet
-                        responses:
-                          '204':
-                            description: No content
-                    """
-            )
-        let components = try YAMLDecoder()
-            .decode(
-                OpenAPI.Components.self,
-                from: """
-                    schemas:
-                      Pet:
-                        type: string
-                    parameters:
-                      limit:
-                        name: limit
-                        in: query
-                        schema:
-                          type: integer
-                    requestBodies:
-                      Body:
-                        content:
-                          application/json:
-                            schema:
-                              type: string
-                    responses:
-                      Ok:
-                        description: Ok
-                    headers:
-                      Trace:
-                        schema:
-                          type: string
-                    """
-            )
-        try translator.emitUnmatchedAttachedMacroRuleDiagnostics(
-            components: components,
-            operations: OperationDescription.all(from: paths, in: components, context: translator.context)
-        )
-        XCTAssertEqual(
-            collector.diagnostics.map(\.description),
-            [
-                "warning: The attached macros rule with filter '^Owner$' in 'components.schemas' doesn't match anything. [context: filter=^Owner$, path=components.schemas]",
-                "warning: The attached macros rule with filter '^offset$' in 'components.parameters' doesn't match anything. [context: filter=^offset$, path=components.parameters]",
-                "warning: The attached macros rule with filter '^OtherBody$' in 'components.requestBodies' doesn't match anything. [context: filter=^OtherBody$, path=components.requestBodies]",
-                "warning: The attached macros rule with filter '^NotFound$' in 'components.responses' doesn't match anything. [context: filter=^NotFound$, path=components.responses]",
-                "warning: The attached macros rule with filter '^Rate$' in 'components.headers' doesn't match anything. [context: filter=^Rate$, path=components.headers]",
-                "warning: The attached macros rule with filter '^deletePet$' in 'operations' doesn't match anything. [context: filter=^deletePet$, path=operations]",
-            ]
-        )
-    }
-
-    func testUnmatchedRuleWithoutFilterWarnings() throws {
-        let collector = AccumulatingDiagnosticCollector()
-        let translator = TypesFileTranslator(
-            config: Config(
-                mode: .types,
-                access: .public,
-                namingStrategy: .defensive,
-                attachedMacros: .init(
-                    components: .init(schemas: [.init(macros: [.init(name: "A")])]),
-                    operations: [.init(input: [.init(name: "A")])]
-                )
-            ),
-            diagnostics: collector,
-            components: .noComponents
-        )
-        try translator.emitUnmatchedAttachedMacroRuleDiagnostics(components: .noComponents, operations: [])
-        XCTAssertEqual(
-            collector.diagnostics.map(\.description),
-            [
-                "warning: The attached macros rule without a filter in 'components.schemas' doesn't match anything. [context: path=components.schemas]",
-                "warning: The attached macros rule without a filter in 'operations' doesn't match anything. [context: path=operations]",
-            ]
-        )
-    }
-
-    func testNoWarningsWithoutAttachedMacros() throws {
-        let collector = AccumulatingDiagnosticCollector()
-        let translator = TypesFileTranslator(
-            config: Config(mode: .types, access: .public, namingStrategy: .defensive),
-            diagnostics: collector,
-            components: .noComponents
-        )
-        try translator.emitUnmatchedAttachedMacroRuleDiagnostics(components: .noComponents, operations: [])
-        XCTAssertEqual(collector.diagnostics.map(\.description), [])
     }
 }

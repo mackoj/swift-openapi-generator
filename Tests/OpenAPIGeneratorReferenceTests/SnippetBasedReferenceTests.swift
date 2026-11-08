@@ -2218,8 +2218,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
                     .init(
                         filter: "^Pet$",
                         macros: [
-                            .init(name: "AllSchemas"),
-                            .init(name: "PetMacro", arguments: [.init(label: "name", value: .literal(.string("Pet")))]),
+                            .init(name: "PetMacro", arguments: [.init(label: "name", value: #""Pet""#)]),
                         ]
                     ),
                 ])
@@ -2520,9 +2519,7 @@ final class SnippetBasedReferenceTests: XCTestCase {
             @Mockable
             public protocol APIProtocol: Sendable {
                 func listPets(_ input: Operations.listPets.Input) async throws -> Operations.listPets.Output
-                @ProtocolMethod
                 func createPet(_ input: Operations.createPet.Input) async throws -> Operations.createPet.Output
-                @Deprecated
                 @available(*, deprecated)
                 func get_sol_pets_sol__lcub_petId_rcub_(_ input: Operations.get_sol_pets_sol__lcub_petId_rcub_.Input) async throws -> Operations.get_sol_pets_sol__lcub_petId_rcub_.Output
             }
@@ -2610,6 +2607,15 @@ final class SnippetBasedReferenceTests: XCTestCase {
             }
             """
         )
+    }
+    func testAttachedMacrosMatchSynthesizedOperationIDBeforeExistingAttributes() throws {
+        let (types, client, _) = try makeTranslators(attachedMacros: Self.operationAttachedMacros)
+        let operations = try makeOperationDescriptions(types)
+        let method = try client.translateClientMethod(XCTUnwrap(operations.first { $0.operationID == "get/pets/{petId}" }))
+        guard case .commentable(_, .attributed(let attributes, .deprecated)) = method else {
+            return XCTFail("Expected the macros between the comment and the deprecation attribute.")
+        }
+        XCTAssertEqual(attributes, [.init(name: "Deprecated")])
     }
     func testAttachedMacrosServer() throws {
         let (_, _, server) = try makeTranslators(attachedMacros: Self.operationAttachedMacros)
@@ -7009,10 +7015,9 @@ extension SnippetBasedReferenceTests {
                 operation: [.init(name: "Operation")],
                 input: [.init(name: "Input")],
                 output: [.init(name: "Output")],
-                protocolMethod: [.init(name: "ProtocolMethod")],
                 clientMethod: [.init(name: "ClientMethod")]
             ),
-            .init(filter: #"^get/pets/\{petId\}$"#, protocolMethod: [.init(name: "Deprecated")]),
+            .init(filter: #"^get/pets/\{petId\}$"#, clientMethod: [.init(name: "Deprecated")]),
         ],
         apiProtocol: [.init(name: "Mockable")],
         client: [.init(name: "ClientMacro")],

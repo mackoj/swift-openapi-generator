@@ -163,31 +163,30 @@ final class Test_GenerateOptions: XCTestCase {
                       - name: SchemaMacro
                         arguments:
                           - label: name
-                            value: Pet
+                            value: '"Pet"'
                           - label: mode
-                            expression: .live
+                            value: .live
                 parameters:
                   - filter: "^limit$"
-                    macros: [ParameterMacro]
+                    macros: [{name: ParameterMacro}]
                 requestBodies:
                   - filter: "^PetBody$"
-                    macros: [RequestBodyMacro]
+                    macros: [{name: RequestBodyMacro}]
                 responses:
                   - filter: "^PetResponse$"
-                    macros: [ResponseMacro]
+                    macros: [{name: ResponseMacro}]
                 headers:
                   - filter: "^Trace$"
-                    macros: [HeaderMacro]
+                    macros: [{name: HeaderMacro}]
               operations:
                 - filter: "^createPet$"
-                  operation: [OperationMacro]
-                  input: [InputMacro]
-                  output: [OutputMacro]
-                  protocolMethod: [ProtocolMethodMacro]
-                  clientMethod: [ClientMethodMacro]
-              apiProtocol: [APIProtocolMacro]
-              client: [ClientMacro]
-              server: [ServerMacro]
+                  operation: [{name: OperationMacro}]
+                  input: [{name: InputMacro}]
+                  output: [{name: OutputMacro}]
+                  clientMethod: [{name: ClientMethodMacro}]
+              apiProtocol: [{name: APIProtocolMacro}]
+              client: [{name: ClientMacro}]
+              server: [{name: ServerMacro}]
             """
             .utf8
         )
@@ -209,7 +208,7 @@ final class Test_GenerateOptions: XCTestCase {
             (.typesOperations, "@InputMacro\n        public struct Input:"),
             (.typesOperations, "@OutputMacro\n        @frozen public enum Output:"),
             (.types, "@APIProtocolMacro\npublic protocol APIProtocol:"),
-            (.types, "@ProtocolMethodMacro\n    func createPet("), (.client, "@ClientMacro\npublic struct Client:"),
+            (.client, "@ClientMacro\npublic struct Client:"),
             (.client, "@ClientMethodMacro\n    public func createPet("),
             (.server, "@ServerMacro\n    public func registerHandlers("),
         ]
@@ -231,7 +230,7 @@ final class Test_GenerateOptions: XCTestCase {
               - types
             attachedMacros:
               apiProtocol:
-                - "@Mockable"
+                - name: "@Mockable"
             """
             .utf8
         )
